@@ -1,47 +1,16 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
-  Customer,
-  Doctor,
-  Medicine,
-  Prescription,
-  Sale,
-  Payment,
-  LedgerEntry,
-  StockMovement,
-  AuditLog,
-  SystemNotification,
-  PharmacySettings,
-  UserProfile,
-  UserRole,
-  CustomerMedicalAlert,
-  CustomerMedicineHistoryItem,
-  Supplier,
-  PurchaseInvoice,
-  SupplierPayment,
-  Employee,
-  Attendance,
-  Payroll,
+  Customer, Doctor, Medicine, Prescription, Sale, Payment,
+  LedgerEntry, StockMovement, AuditLog, SystemNotification,
+  PharmacySettings, UserProfile, UserRole, CustomerMedicalAlert,
+  CustomerMedicineHistoryItem, Supplier, PurchaseInvoice, SupplierPayment,
+  Employee, Attendance, Payroll,
 } from '../types';
-import {
-  initialCustomers,
-  initialDoctors,
-  initialMedicines,
-  initialPrescriptions,
-  initialSales,
-  initialPayments,
-  initialLedgerEntries,
-  initialStockMovements,
-  initialAuditLogs,
-  initialNotifications,
-  initialSettings,
-} from '../data/seedData';
+import { initialSettings } from '../data/seedData';
 import { generateCode, getDaysUntilExpiry } from '../lib/formatters';
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
 
-// ============================================================
-// Helper: تشيل حقل id من البيانات قبل الإرسال لـ Supabase
-// (لأن Supabase بيعمل uuid تلقائي، والكود بيعمل id يدوي)
-// ============================================================
+// Helper: تشيل حقل id قبل الإرسال لـ Supabase
 function cleanForSupabase<T extends Record<string, any>>(obj: T): Omit<T, 'id'> {
   const { id, ...rest } = obj;
   return rest as Omit<T, 'id'>;
@@ -165,92 +134,26 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return saved ? JSON.parse(saved) : initialSettings;
   });
 
-  const [customers, setCustomers] = useState<Customer[]>(() => {
-    const saved = localStorage.getItem('pharmacy_customers');
-    return saved ? JSON.parse(saved) : initialCustomers;
-  });
+  // كل البيانات بتبدأ فاضية، وبعدين تتجاب من Supabase
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [medicines, setMedicines] = useState<Medicine[]>([]);
+  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
+  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [notifications, setNotifications] = useState<SystemNotification[]>([]);
+  const [customerMedicalAlerts, setCustomerMedicalAlerts] = useState<CustomerMedicalAlert[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>([]);
+  const [supplierPayments, setSupplierPayments] = useState<SupplierPayment[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [attendance, setAttendance] = useState<Attendance[]>([]);
+  const [payroll, setPayroll] = useState<Payroll[]>([]);
 
-  const [doctors, setDoctors] = useState<Doctor[]>(() => {
-    const saved = localStorage.getItem('pharmacy_doctors');
-    return saved ? JSON.parse(saved) : initialDoctors;
-  });
-
-  const [medicines, setMedicines] = useState<Medicine[]>(() => {
-    const saved = localStorage.getItem('pharmacy_medicines');
-    return saved ? JSON.parse(saved) : initialMedicines;
-  });
-
-  const [prescriptions, setPrescriptions] = useState<Prescription[]>(() => {
-    const saved = localStorage.getItem('pharmacy_prescriptions');
-    return saved ? JSON.parse(saved) : initialPrescriptions;
-  });
-
-  const [sales, setSales] = useState<Sale[]>(() => {
-    const saved = localStorage.getItem('pharmacy_sales');
-    return saved ? JSON.parse(saved) : initialSales;
-  });
-
-  const [payments, setPayments] = useState<Payment[]>(() => {
-    const saved = localStorage.getItem('pharmacy_payments');
-    return saved ? JSON.parse(saved) : initialPayments;
-  });
-
-  const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>(() => {
-    const saved = localStorage.getItem('pharmacy_ledger');
-    return saved ? JSON.parse(saved) : initialLedgerEntries;
-  });
-
-  const [stockMovements, setStockMovements] = useState<StockMovement[]>(() => {
-    const saved = localStorage.getItem('pharmacy_stock_movements');
-    return saved ? JSON.parse(saved) : initialStockMovements;
-  });
-
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
-    const saved = localStorage.getItem('pharmacy_audit_logs');
-    return saved ? JSON.parse(saved) : initialAuditLogs;
-  });
-
-  const [notifications, setNotifications] = useState<SystemNotification[]>(() => {
-    const saved = localStorage.getItem('pharmacy_notifications');
-    return saved ? JSON.parse(saved) : initialNotifications;
-  });
-
-  const [customerMedicalAlerts, setCustomerMedicalAlerts] = useState<CustomerMedicalAlert[]>(() => {
-    const saved = localStorage.getItem('pharmacy_medical_alerts');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [suppliers, setSuppliers] = useState<Supplier[]>(() => {
-    const saved = localStorage.getItem('pharmacy_suppliers');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [purchaseInvoices, setPurchaseInvoices] = useState<PurchaseInvoice[]>(() => {
-    const saved = localStorage.getItem('pharmacy_purchase_invoices');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [supplierPayments, setSupplierPayments] = useState<SupplierPayment[]>(() => {
-    const saved = localStorage.getItem('pharmacy_supplier_payments');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [employees, setEmployees] = useState<Employee[]>(() => {
-    const saved = localStorage.getItem('pharmacy_employees');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [attendance, setAttendance] = useState<Attendance[]>(() => {
-    const saved = localStorage.getItem('pharmacy_attendance');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [payroll, setPayroll] = useState<Payroll[]>(() => {
-    const saved = localStorage.getItem('pharmacy_payroll');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  // Sync to LocalStorage
+  // Sync to LocalStorage (كاش للسرعة فقط)
   useEffect(() => { localStorage.setItem('pharmacy_active_user', JSON.stringify(currentUser)); }, [currentUser]);
   useEffect(() => { localStorage.setItem('pharmacy_settings', JSON.stringify(settings)); }, [settings]);
   useEffect(() => { localStorage.setItem('pharmacy_customers', JSON.stringify(customers)); }, [customers]);
@@ -271,41 +174,68 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   useEffect(() => { localStorage.setItem('pharmacy_attendance', JSON.stringify(attendance)); }, [attendance]);
   useEffect(() => { localStorage.setItem('pharmacy_payroll', JSON.stringify(payroll)); }, [payroll]);
 
-  // Fetch from Supabase on load
+  // Fetch from Supabase on load (المصدر الرئيسي)
   useEffect(() => {
     async function loadFromSupabase() {
       const supabase = getSupabaseClient();
       if (!supabase || !isSupabaseConfigured()) {
-        console.warn('Supabase not configured - using local data');
+        console.warn('Supabase not configured - using empty data');
         return;
       }
 
       try {
         const { data: customersData } = await supabase.from('customers').select('*');
-        if (customersData && customersData.length > 0) setCustomers(customersData as Customer[]);
+        setCustomers((customersData as Customer[]) || []);
 
-        const { data: suppliersData } = await supabase.from('suppliers').select('*');
-        if (suppliersData && suppliersData.length > 0) setSuppliers(suppliersData as Supplier[]);
+        const { data: doctorsData } = await supabase.from('doctors').select('*');
+        setDoctors((doctorsData as Doctor[]) || []);
 
-        const { data: purchaseData } = await supabase.from('purchase_invoices').select('*');
-        if (purchaseData && purchaseData.length > 0) setPurchaseInvoices(purchaseData as PurchaseInvoice[]);
+        const { data: medicinesData } = await supabase.from('medicines').select('*');
+        setMedicines((medicinesData as Medicine[]) || []);
 
-        const { data: supplierPaysData } = await supabase.from('supplier_payments').select('*');
-        if (supplierPaysData && supplierPaysData.length > 0) setSupplierPayments(supplierPaysData as SupplierPayment[]);
+        const { data: prescriptionsData } = await supabase.from('prescriptions').select('*');
+        setPrescriptions((prescriptionsData as Prescription[]) || []);
 
-        const { data: employeesData } = await supabase.from('employees').select('*');
-        if (employeesData && employeesData.length > 0) setEmployees(employeesData as Employee[]);
+        const { data: salesData } = await supabase.from('sales').select('*');
+        setSales((salesData as Sale[]) || []);
 
-        const { data: attendanceData } = await supabase.from('attendance').select('*');
-        if (attendanceData && attendanceData.length > 0) setAttendance(attendanceData as Attendance[]);
+        const { data: paymentsData } = await supabase.from('payments').select('*');
+        setPayments((paymentsData as Payment[]) || []);
 
-        const { data: payrollData } = await supabase.from('payroll').select('*');
-        if (payrollData && payrollData.length > 0) setPayroll(payrollData as Payroll[]);
+        const { data: ledgerData } = await supabase.from('ledger_entries').select('*');
+        setLedgerEntries((ledgerData as LedgerEntry[]) || []);
+
+        const { data: stockData } = await supabase.from('medicine_stock_movements').select('*');
+        setStockMovements((stockData as StockMovement[]) || []);
+
+        const { data: auditData } = await supabase.from('audit_logs').select('*');
+        setAuditLogs((auditData as AuditLog[]) || []);
+
+        const { data: notificationsData } = await supabase.from('notifications').select('*');
+        setNotifications((notificationsData as SystemNotification[]) || []);
 
         const { data: alertsData } = await supabase.from('customer_medical_alerts').select('*');
-        if (alertsData && alertsData.length > 0) setCustomerMedicalAlerts(alertsData as CustomerMedicalAlert[]);
+        setCustomerMedicalAlerts((alertsData as CustomerMedicalAlert[]) || []);
 
-        console.log('Data loaded from Supabase');
+        const { data: suppliersData } = await supabase.from('suppliers').select('*');
+        setSuppliers((suppliersData as Supplier[]) || []);
+
+        const { data: purchaseData } = await supabase.from('purchase_invoices').select('*');
+        setPurchaseInvoices((purchaseData as PurchaseInvoice[]) || []);
+
+        const { data: supplierPaysData } = await supabase.from('supplier_payments').select('*');
+        setSupplierPayments((supplierPaysData as SupplierPayment[]) || []);
+
+        const { data: employeesData } = await supabase.from('employees').select('*');
+        setEmployees((employeesData as Employee[]) || []);
+
+        const { data: attendanceData } = await supabase.from('attendance').select('*');
+        setAttendance((attendanceData as Attendance[]) || []);
+
+        const { data: payrollData } = await supabase.from('payroll').select('*');
+        setPayroll((payrollData as Payroll[]) || []);
+
+        console.log('✅ Data loaded from Supabase');
       } catch (error) {
         console.error('Failed to load from Supabase:', error);
       }
@@ -368,6 +298,13 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       timestamp: new Date().toISOString()
     };
     setAuditLogs(prev => [newLog, ...prev]);
+
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('audit_logs').insert(cleanForSupabase(newLog)).then(({ error }) => {
+        if (error) console.error('Failed to save audit log:', error);
+      });
+    }
   };
 
   const switchRole = (role: UserRole) => {
@@ -1151,16 +1088,16 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const resetAllData = () => {
     setSettings(initialSettings);
-    setCustomers(initialCustomers);
-    setDoctors(initialDoctors);
-    setMedicines(initialMedicines);
-    setPrescriptions(initialPrescriptions);
-    setSales(initialSales);
-    setPayments(initialPayments);
-    setLedgerEntries(initialLedgerEntries);
-    setStockMovements(initialStockMovements);
-    setAuditLogs(initialAuditLogs);
-    setNotifications(initialNotifications);
+    setCustomers([]);
+    setDoctors([]);
+    setMedicines([]);
+    setPrescriptions([]);
+    setSales([]);
+    setPayments([]);
+    setLedgerEntries([]);
+    setStockMovements([]);
+    setAuditLogs([]);
+    setNotifications([]);
     setCustomerMedicalAlerts([]);
     setSuppliers([]);
     setPurchaseInvoices([]);
@@ -1188,7 +1125,7 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     localStorage.removeItem('pharmacy_attendance');
     localStorage.removeItem('pharmacy_payroll');
 
-    logAudit('إعادة تعيين البيانات', 'System', 'all', 'تمت استعادة البيانات التجريبية الأولية بنجاح');
+    logAudit('إعادة تعيين البيانات', 'System', 'all', 'تمت إعادة تعيين البيانات');
   };
 
   const exportDatabaseJson = () => {
