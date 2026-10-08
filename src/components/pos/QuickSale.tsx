@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShoppingCart,
   User,
@@ -12,18 +12,26 @@ import { formatCurrency } from '../../lib/formatters';
 
 interface QuickSaleProps {
   onBack: () => void;
+  initialCustomerId?: string;
 }
 
-export const QuickSale: React.FC<QuickSaleProps> = ({ onBack }) => {
+export const QuickSale: React.FC<QuickSaleProps> = ({ onBack, initialCustomerId }) => {
   const { customers, createSale, getCustomerBalance } = usePharmacy();
 
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState(initialCustomerId || '');
   const [searchQuery, setSearchQuery] = useState('');
   const [totalAmount, setTotalAmount] = useState<number | ''>('');
   const [paidAmount, setPaidAmount] = useState<number | ''>('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'card' | 'bank_transfer'>('cash');
   const [notes, setNotes] = useState('');
   const [completedSale, setCompletedSale] = useState<{ invoiceNumber: string; amount: number } | null>(null);
+
+  // تحديث العميل لما ييجي من ملف المريض
+  useEffect(() => {
+    if (initialCustomerId) {
+      setSelectedCustomerId(initialCustomerId);
+    }
+  }, [initialCustomerId]);
 
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
   const previousBalance = selectedCustomer ? getCustomerBalance(selectedCustomer.id) : 0;
@@ -33,6 +41,7 @@ export const QuickSale: React.FC<QuickSaleProps> = ({ onBack }) => {
   const remaining = Math.max(0, total - paid);
   const newTotalDebt = previousBalance + remaining;
 
+  // فلترة العملاء
   const filteredCustomers = customers.filter(c => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();

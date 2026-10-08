@@ -8,7 +8,6 @@ import { LoginPage } from './components/auth/LoginPage';
 // Views
 import { Dashboard } from './components/dashboard/Dashboard';
 import { QuickSale } from './components/pos/QuickSale';
-import { PosCheckout } from './components/pos/PosCheckout';
 import { CustomerList } from './components/customers/CustomerList';
 import { CustomerProfile } from './components/customers/CustomerProfile';
 import { MedicineList } from './components/medicines/MedicineList';
@@ -42,7 +41,6 @@ const MainApp: React.FC = () => {
     updateMedicine,
     addDoctor,
     updateDoctor,
-    medicines,
   } = usePharmacy();
 
   // Navigation state
@@ -52,9 +50,8 @@ const MainApp: React.FC = () => {
   const [viewCustomerId, setViewCustomerId] = useState<string | null>(null);
   const [viewSupplierId, setViewSupplierId] = useState<string | null>(null);
 
-  // Preloaded data for POS
+  // Preloaded customer for QuickSale
   const [posCustomerId, setPosCustomerId] = useState<string | undefined>(undefined);
-  const [pendingCartItem, setPendingCartItem] = useState<{ customerId: string; medicineId: string } | null>(null);
 
   // Modals state
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -72,7 +69,7 @@ const MainApp: React.FC = () => {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [paymentCustomerId, setPaymentCustomerId] = useState<string | undefined>(undefined);
 
-  // Global keyboard shortcut: Ctrl+K or Cmd+K for search
+  // Global keyboard shortcut
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
@@ -87,7 +84,7 @@ const MainApp: React.FC = () => {
   // Action handlers
   const handleOpenNewSale = (customerId?: string) => {
     setPosCustomerId(customerId);
-    setActiveTab('pos');
+    setActiveTab('quick-sale');
     setViewCustomerId(null);
   };
 
@@ -103,31 +100,14 @@ const MainApp: React.FC = () => {
 
   const handleDispensePrescription = (prescription: Prescription) => {
     setPosCustomerId(prescription.customer_id);
-    setActiveTab('pos');
+    setActiveTab('quick-sale');
   };
 
   const handleSelectTab = (tab: string) => {
     setActiveTab(tab);
-    if (tab !== 'customers') {
-      setViewCustomerId(null);
-    }
-    if (tab !== 'suppliers') {
-      setViewSupplierId(null);
-    }
+    if (tab !== 'customers') setViewCustomerId(null);
+    if (tab !== 'suppliers') setViewSupplierId(null);
     setIsMobileMenuOpen(false);
-  };
-
-  const handleAddMedicineToCart = (customerId: string, medicineId: string) => {
-    const med = medicines.find(m => m.id === medicineId);
-    if (!med) {
-      alert('الدواء غير موجود في المخزون!');
-      return;
-    }
-
-    setPosCustomerId(customerId);
-    setPendingCartItem({ customerId, medicineId });
-    setActiveTab('pos');
-    setViewCustomerId(null);
   };
 
   return (
@@ -165,19 +145,9 @@ const MainApp: React.FC = () => {
           )}
 
           {activeTab === 'quick-sale' && (
-            <QuickSale onBack={() => setActiveTab('dashboard')} />
-          )}
-
-          {activeTab === 'pos' && (
-            <PosCheckout
+            <QuickSale
+              onBack={() => setActiveTab('dashboard')}
               initialCustomerId={posCustomerId}
-              pendingCartItem={pendingCartItem}
-              onClearPendingCartItem={() => setPendingCartItem(null)}
-              onOpenNewCustomerModal={() => {
-                setCustomerToEdit(null);
-                setIsCustomerModalOpen(true);
-              }}
-              onNavigateToCustomerProfile={handleSelectCustomer}
             />
           )}
 
@@ -192,7 +162,7 @@ const MainApp: React.FC = () => {
                   setCustomerToEdit(customer);
                   setIsCustomerModalOpen(true);
                 }}
-                onAddMedicineToCart={handleAddMedicineToCart}
+                onAddMedicineToCart={() => {}}
               />
             ) : (
               <CustomerList
@@ -308,15 +278,9 @@ const MainApp: React.FC = () => {
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
         onSelectCustomer={handleSelectCustomer}
-        onSelectMedicine={() => {
-          setActiveTab('medicines');
-        }}
-        onSelectPrescription={() => {
-          setActiveTab('prescriptions');
-        }}
-        onSelectDoctor={() => {
-          setActiveTab('doctors');
-        }}
+        onSelectMedicine={() => setActiveTab('medicines')}
+        onSelectPrescription={() => setActiveTab('prescriptions')}
+        onSelectDoctor={() => setActiveTab('doctors')}
         onNavigateTab={handleSelectTab}
       />
 
@@ -385,7 +349,6 @@ const MainApp: React.FC = () => {
   );
 };
 
-// ✅ التحقق من تسجيل الدخول
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return localStorage.getItem('pharmacy_auth') === 'true';
