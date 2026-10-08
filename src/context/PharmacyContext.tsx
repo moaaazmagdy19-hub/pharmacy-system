@@ -36,6 +36,7 @@ import {
   initialSettings,
 } from '../data/seedData';
 import { generateCode, getDaysUntilExpiry } from '../lib/formatters';
+import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
 
 interface PharmacyContextType {
   currentUser: UserProfile;
@@ -243,7 +244,9 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Sync to LocalStorage
+  // ============================================
+  // ✅ Sync to LocalStorage (Fallback)
+  // ============================================
   useEffect(() => {
     localStorage.setItem('pharmacy_active_user', JSON.stringify(currentUser));
   }, [currentUser]);
@@ -319,6 +322,75 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   useEffect(() => {
     localStorage.setItem('pharmacy_payroll', JSON.stringify(payroll));
   }, [payroll]);
+
+  // ============================================
+  // ✅ Fetch from Supabase on load
+  // ============================================
+  useEffect(() => {
+    async function loadFromSupabase() {
+      const supabase = getSupabaseClient();
+      if (!supabase || !isSupabaseConfigured()) {
+        console.warn('Supabase not configured - using local data');
+        return;
+      }
+
+      try {
+        // جلب كل العملاء
+        const { data: customersData } = await supabase.from('customers').select('*');
+        if (customersData && customersData.length > 0) {
+          setCustomers(customersData as Customer[]);
+        }
+
+        // جلب الموردين
+        const { data: suppliersData } = await supabase.from('suppliers').select('*');
+        if (suppliersData && suppliersData.length > 0) {
+          setSuppliers(suppliersData as Supplier[]);
+        }
+
+        // جلب فواتير الشراء
+        const { data: purchaseData } = await supabase.from('purchase_invoices').select('*');
+        if (purchaseData && purchaseData.length > 0) {
+          setPurchaseInvoices(purchaseData as PurchaseInvoice[]);
+        }
+
+        // جلب مدفوعات الموردين
+        const { data: supplierPaysData } = await supabase.from('supplier_payments').select('*');
+        if (supplierPaysData && supplierPaysData.length > 0) {
+          setSupplierPayments(supplierPaysData as SupplierPayment[]);
+        }
+
+        // جلب الموظفين
+        const { data: employeesData } = await supabase.from('employees').select('*');
+        if (employeesData && employeesData.length > 0) {
+          setEmployees(employeesData as Employee[]);
+        }
+
+        // جلب الحضور
+        const { data: attendanceData } = await supabase.from('attendance').select('*');
+        if (attendanceData && attendanceData.length > 0) {
+          setAttendance(attendanceData as Attendance[]);
+        }
+
+        // جلب المرتبات
+        const { data: payrollData } = await supabase.from('payroll').select('*');
+        if (payrollData && payrollData.length > 0) {
+          setPayroll(payrollData as Payroll[]);
+        }
+
+        // جلب التنبيهات الطبية
+        const { data: alertsData } = await supabase.from('customer_medical_alerts').select('*');
+        if (alertsData && alertsData.length > 0) {
+          setCustomerMedicalAlerts(alertsData as CustomerMedicalAlert[]);
+        }
+
+        console.log('✅ تم تحميل البيانات من Supabase بنجاح');
+      } catch (error) {
+        console.error('❌ فشل تحميل البيانات من Supabase:', error);
+      }
+    }
+
+    loadFromSupabase();
+  }, []);
 
   // Check inventory stock and expiry on load
   useEffect(() => {
@@ -405,7 +477,7 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     logAudit('تحديث إعدادات الصيدلية', 'Settings', 'global', 'تم تعديل بيانات وإعدادات النظام');
   };
 
-  // ✅ Medical Alerts
+  // ✅ Medical Alerts - Supabase
   const addMedicalAlert = (data: Omit<CustomerMedicalAlert, 'id' | 'created_at'>): CustomerMedicalAlert => {
     const newAlert: CustomerMedicalAlert = {
       ...data,
@@ -414,6 +486,15 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setCustomerMedicalAlerts(prev => [newAlert, ...prev]);
     logAudit('إضافة تنبيه طبي', 'Customers', data.customer_id, `تمت إضافة ${data.alert_type}: ${data.alert_text}`);
+
+    // ✅ كتابة في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('customer_medical_alerts').insert(newAlert).then(({ error }) => {
+        if (error) console.error('Failed to save alert to Supabase:', error);
+      });
+    }
+
     return newAlert;
   };
 
@@ -422,6 +503,14 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (alert) {
       setCustomerMedicalAlerts(prev => prev.filter(a => a.id !== id));
       logAudit('حذف تنبيه طبي', 'Customers', alert.customer_id, `تم حذف التنبيه: ${alert.alert_text}`);
+
+      // ✅ حذف من Supabase
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        supabase.from('customer_medical_alerts').delete().eq('id', id).then(({ error }) => {
+          if (error) console.error('Failed to delete alert from Supabase:', error);
+        });
+      }
     }
   };
 
@@ -429,7 +518,7 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return customerMedicalAlerts.filter(a => a.customer_id === customerId);
   };
 
-  // ✅ Suppliers
+  // ✅ Suppliers - Supabase
   const addSupplier = (data: Omit<Supplier, 'id' | 'created_at'>): Supplier => {
     const newSupplier: Supplier = {
       ...data,
@@ -438,18 +527,43 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setSuppliers(prev => [newSupplier, ...prev]);
     logAudit('إضافة مورد جديد', 'Suppliers', newSupplier.id, `تمت إضافة المورد ${data.name}`);
+
+    // ✅ كتابة في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('suppliers').insert(newSupplier).then(({ error }) => {
+        if (error) console.error('Failed to save supplier to Supabase:', error);
+      });
+    }
+
     return newSupplier;
   };
 
   const updateSupplier = (id: string, data: Partial<Supplier>) => {
     setSuppliers(prev => prev.map(s => (s.id === id ? { ...s, ...data } : s)));
     logAudit('تعديل بيانات مورد', 'Suppliers', id, `تم تحديث بيانات المورد`);
+
+    // ✅ تحديث في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('suppliers').update(data).eq('id', id).then(({ error }) => {
+        if (error) console.error('Failed to update supplier in Supabase:', error);
+      });
+    }
   };
 
   const deleteSupplier = (id: string) => {
     const sup = suppliers.find(s => s.id === id);
     setSuppliers(prev => prev.filter(s => s.id !== id));
     logAudit('حذف مورد', 'Suppliers', id, `تم حذف المورد ${sup?.name || id}`);
+
+    // ✅ حذف من Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('suppliers').delete().eq('id', id).then(({ error }) => {
+        if (error) console.error('Failed to delete supplier from Supabase:', error);
+      });
+    }
   };
 
   const addPurchaseInvoice = (data: Omit<PurchaseInvoice, 'id' | 'created_at'>): PurchaseInvoice => {
@@ -460,6 +574,15 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setPurchaseInvoices(prev => [newInvoice, ...prev]);
     logAudit('إضافة فاتورة شراء', 'PurchaseInvoices', newInvoice.id, `فاتورة من ${data.supplier_name} بإجمالي ${data.total_amount} ج.م`);
+
+    // ✅ كتابة في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('purchase_invoices').insert(newInvoice).then(({ error }) => {
+        if (error) console.error('Failed to save purchase invoice:', error);
+      });
+    }
+
     return newInvoice;
   };
 
@@ -513,6 +636,15 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     logAudit('تسجيل دفعة مورد', 'SupplierPayments', newPayment.payment_code, `سداد ${paymentData.amount} ج.م للمورد ${supplier?.name}`);
+
+    // ✅ كتابة في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('supplier_payments').insert(newPayment).then(({ error }) => {
+        if (error) console.error('Failed to save supplier payment:', error);
+      });
+    }
+
     return newPayment;
   };
 
@@ -524,7 +656,7 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return Math.max(0, totalInvoices - totalPaid);
   };
 
-  // ✅ Employees
+  // ✅ Employees - Supabase
   const addEmployee = (data: Omit<Employee, 'id' | 'created_at'>): Employee => {
     const newEmployee: Employee = {
       ...data,
@@ -533,18 +665,43 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setEmployees(prev => [newEmployee, ...prev]);
     logAudit('إضافة موظف جديد', 'Employees', newEmployee.id, `تمت إضافة ${data.name} بوظيفة ${data.job_title}`);
+
+    // ✅ كتابة في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('employees').insert(newEmployee).then(({ error }) => {
+        if (error) console.error('Failed to save employee:', error);
+      });
+    }
+
     return newEmployee;
   };
 
   const updateEmployee = (id: string, data: Partial<Employee>) => {
     setEmployees(prev => prev.map(e => (e.id === id ? { ...e, ...data } : e)));
     logAudit('تعديل بيانات موظف', 'Employees', id, `تم تحديث بيانات الموظف`);
+
+    // ✅ تحديث في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('employees').update(data).eq('id', id).then(({ error }) => {
+        if (error) console.error('Failed to update employee:', error);
+      });
+    }
   };
 
   const deleteEmployee = (id: string) => {
     const emp = employees.find(e => e.id === id);
     setEmployees(prev => prev.filter(e => e.id !== id));
     logAudit('حذف موظف', 'Employees', id, `تم حذف الموظف ${emp?.name || id}`);
+
+    // ✅ حذف من Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('employees').delete().eq('id', id).then(({ error }) => {
+        if (error) console.error('Failed to delete employee:', error);
+      });
+    }
   };
 
   const markAttendance = (data: Omit<Attendance, 'id' | 'created_at'>): Attendance => {
@@ -555,6 +712,15 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (existing) {
       setAttendance(prev => prev.map(a => (a.id === existing.id ? { ...a, ...data } : a)));
       logAudit('تعديل حضور موظف', 'Attendance', existing.id, `${data.employee_name}: ${data.status}`);
+
+      // ✅ تحديث في Supabase
+      const supabase = getSupabaseClient();
+      if (supabase) {
+        supabase.from('attendance').update(data).eq('id', existing.id).then(({ error }) => {
+          if (error) console.error('Failed to update attendance:', error);
+        });
+      }
+
       return { ...existing, ...data };
     }
 
@@ -565,6 +731,15 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setAttendance(prev => [newAttendance, ...prev]);
     logAudit('تسجيل حضور موظف', 'Attendance', newAttendance.id, `${data.employee_name}: ${data.status}`);
+
+    // ✅ كتابة في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('attendance').insert(newAttendance).then(({ error }) => {
+        if (error) console.error('Failed to save attendance:', error);
+      });
+    }
+
     return newAttendance;
   };
 
@@ -633,6 +808,15 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setPayroll(prev => [newPayroll, ...prev]);
     logAudit('حفظ مرتب شهري', 'Payroll', newPayroll.id, `تم حفظ مرتب ${data.employee_name} لشهر ${data.month}/${data.year}`);
+
+    // ✅ كتابة في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('payroll').insert(newPayroll).then(({ error }) => {
+        if (error) console.error('Failed to save payroll:', error);
+      });
+    }
+
     return newPayroll;
   };
 
@@ -683,6 +867,7 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     );
   };
 
+  // ✅ Customers - Supabase
   const addCustomer = (data: Omit<Customer, 'id' | 'code' | 'created_at' | 'current_balance' | 'total_purchased' | 'total_paid'>): Customer => {
     const id = `cust-${Date.now()}`;
     const code = generateCode('CUST', customers.length);
@@ -697,14 +882,32 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setCustomers(prev => [newCustomer, ...prev]);
     logAudit('إضافة عميل جديد', 'Customers', id, `تمت إضافة العميل ${data.name} هاتف: ${data.phone}`);
+
+    // ✅ كتابة في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('customers').insert(newCustomer).then(({ error }) => {
+        if (error) console.error('Failed to save customer:', error);
+      });
+    }
+
     return newCustomer;
   };
 
   const updateCustomer = (id: string, data: Partial<Customer>) => {
+    const updatedData = { ...data, updated_at: new Date().toISOString() };
     setCustomers(prev =>
-      prev.map(c => (c.id === id ? { ...c, ...data, updated_at: new Date().toISOString() } : c))
+      prev.map(c => (c.id === id ? { ...c, ...updatedData } : c))
     );
     logAudit('تعديل بيانات عميل', 'Customers', id, `تم تحديث بيانات العميل`);
+
+    // ✅ تحديث في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('customers').update(updatedData).eq('id', id).then(({ error }) => {
+        if (error) console.error('Failed to update customer:', error);
+      });
+    }
   };
 
   const addDoctor = (data: Omit<Doctor, 'id' | 'code' | 'created_at'>): Doctor => {
@@ -718,12 +921,29 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setDoctors(prev => [newDoctor, ...prev]);
     logAudit('إضافة طبيب جديد', 'Doctors', id, `تمت إضافة الطبيب ${data.name} تخصص: ${data.specialty}`);
+
+    // ✅ كتابة في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('doctors').insert(newDoctor).then(({ error }) => {
+        if (error) console.error('Failed to save doctor:', error);
+      });
+    }
+
     return newDoctor;
   };
 
   const updateDoctor = (id: string, data: Partial<Doctor>) => {
     setDoctors(prev => prev.map(d => (d.id === id ? { ...d, ...data } : d)));
     logAudit('تعديل بيانات طبيب', 'Doctors', id, `تم تحديث بيانات الطبيب`);
+
+    // ✅ تحديث في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('doctors').update(data).eq('id', id).then(({ error }) => {
+        if (error) console.error('Failed to update doctor:', error);
+      });
+    }
   };
 
   const addMedicine = (data: Omit<Medicine, 'id' | 'code' | 'created_at'>): Medicine => {
@@ -737,6 +957,15 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setMedicines(prev => [newMedicine, ...prev]);
     logAudit('إضافة دواء جديد للمخزون', 'Medicines', id, `تمت إضافة ${data.name} بسعر بيع ${data.selling_price} ج.م`);
+
+    // ✅ كتابة في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('medicines').insert(newMedicine).then(({ error }) => {
+        if (error) console.error('Failed to save medicine:', error);
+      });
+    }
+
     return newMedicine;
   };
 
@@ -747,6 +976,14 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     setMedicines(prev => prev.map(m => (m.id === id ? { ...m, ...data } : m)));
     logAudit('تعديل بيانات دواء', 'Medicines', id, `تم تحديث بيانات دواء ${existing?.name || ''}`, oldPrice, newPrice);
+
+    // ✅ تحديث في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('medicines').update(data).eq('id', id).then(({ error }) => {
+        if (error) console.error('Failed to update medicine:', error);
+      });
+    }
   };
 
   const adjustStock = (medicineId: string, quantityChange: number, reason: string) => {
@@ -776,12 +1013,28 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setStockMovements(prev => [movement, ...prev]);
 
     logAudit('تسوية مخزون دواء', 'Medicines', medicineId, `تعديل رصيد ${med.name} بمقدار ${quantityChange} (${reason})`, `${previousStock}`, `${newStock}`);
+
+    // ✅ تحديث في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('medicines').update({ current_stock: newStock }).eq('id', medicineId).then(({ error }) => {
+        if (error) console.error('Failed to update stock:', error);
+      });
+    }
   };
 
   const deleteMedicine = (id: string) => {
     const med = medicines.find(m => m.id === id);
     setMedicines(prev => prev.filter(m => m.id !== id));
     logAudit('حذف دواء من المخزن', 'Medicines', id, `تم حذف دواء ${med?.name || id}`);
+
+    // ✅ حذف من Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('medicines').delete().eq('id', id).then(({ error }) => {
+        if (error) console.error('Failed to delete medicine:', error);
+      });
+    }
   };
 
   const addPrescription = (data: Omit<Prescription, 'id' | 'code' | 'created_at'>): Prescription => {
@@ -795,14 +1048,32 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
     setPrescriptions(prev => [newPrescription, ...prev]);
     logAudit('إنشاء روشتة طبية', 'Prescriptions', id, `تسجيل روشتة برقم ${code}`);
+
+    // ✅ كتابة في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('prescriptions').insert(newPrescription).then(({ error }) => {
+        if (error) console.error('Failed to save prescription:', error);
+      });
+    }
+
     return newPrescription;
   };
 
   const updatePrescriptionStatus = (id: string, status: 'pending' | 'dispensed' | 'cancelled') => {
     setPrescriptions(prev => prev.map(p => (p.id === id ? { ...p, status } : p)));
     logAudit('تحديث حالة روشتة', 'Prescriptions', id, `تغيير حالة الروشتة إلى: ${status}`);
+
+    // ✅ تحديث في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('prescriptions').update({ status }).eq('id', id).then(({ error }) => {
+        if (error) console.error('Failed to update prescription status:', error);
+      });
+    }
   };
 
+  // ✅ Sales - Supabase (الأهم)
   const createSale = (saleData: {
     customerId?: string;
     customerName: string;
@@ -865,6 +1136,15 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
     setSales(prev => [newSale, ...prev]);
 
+    // ✅ كتابة في Supabase (من غير items لأنها في جدول sale_items)
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      const { items, ...saleWithoutItems } = newSale;
+      supabase.from('sales').insert(saleWithoutItems).then(({ error }) => {
+        if (error) console.error('Failed to save sale:', error);
+      });
+    }
+
     const newStockMovements: StockMovement[] = [];
     setMedicines(prevMeds =>
       prevMeds.map(med => {
@@ -925,6 +1205,17 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         )
       );
 
+      // ✅ تحديث العميل في Supabase
+      if (supabase && customer) {
+        supabase.from('customers').update({
+          current_balance: newBal,
+          total_purchased: (customer.total_purchased || 0) + saleData.totalAmount,
+          total_paid: (customer.total_paid || 0) + saleData.paidAmount,
+        }).eq('id', saleData.customerId).then(({ error }) => {
+          if (error) console.error('Failed to update customer balance:', error);
+        });
+      }
+
       const ledgerEntry: LedgerEntry = {
         id: `led-${Date.now()}`,
         created_at: new Date().toISOString(),
@@ -940,6 +1231,13 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         employee_name: currentUser.name,
       };
       setLedgerEntries(prev => [ledgerEntry, ...prev]);
+
+      // ✅ كتابة في Supabase
+      if (supabase) {
+        supabase.from('ledger_entries').insert(ledgerEntry).then(({ error }) => {
+          if (error) console.error('Failed to save ledger entry:', error);
+        });
+      }
 
       if (saleData.paidAmount > 0) {
         const paymentCode = generateCode('PAY', payments.length);
@@ -958,6 +1256,13 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           created_at: new Date().toISOString(),
         };
         setPayments(prev => [paymentRecord, ...prev]);
+
+        // ✅ كتابة في Supabase
+        if (supabase) {
+          supabase.from('payments').insert(paymentRecord).then(({ error }) => {
+            if (error) console.error('Failed to save payment:', error);
+          });
+        }
       }
     }
 
@@ -975,6 +1280,7 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return newSale;
   };
 
+  // ✅ Record Payment - Supabase
   const recordPayment = (paymentData: {
     customerId: string;
     amount: number;
@@ -1039,6 +1345,27 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       `سداد ${paymentData.amount} ج.م للعميل ${customer?.name} - الرصيد السابق: ${prevBalance} ج.م، الجديد: ${newBalance} ج.م`
     );
 
+    // ✅ كتابة في Supabase
+    const supabase = getSupabaseClient();
+    if (supabase) {
+      supabase.from('payمانments').insert(newPayment).then(({ error }) => {
+        if (error) console.error(' ممكنFailed to save payment:', error);
+      });
+
+      supabase.from('ledger_entries').insert(ledgerEntry).then(({ error }) => {
+        if (error) console.error('Failed to save ledger entry:', error);
+      });
+
+      if (customer) {
+        supabase.from('customers').update({
+          current_balance: newBalance,
+          total_paid: (customer.total_paid || 0) + paymentData.amount,
+        }).eq('id', paymentData.customerId).then(({ error }) => {
+          if (error) console.error('Failed to update customer:', error);
+        });
+      }
+    }
+
     return newPayment;
   };
 
@@ -1094,24 +1421,9 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const exportDatabaseJson = () => {
     const data = {
-      settings,
-      customers,
-      doctors,
-      medicines,
-      prescriptions,
-      sales,
-      payments,
-      ledgerEntries,
-      stockMovements,
-      auditLogs,
-      notifications,
-      customerMedicalAlerts,
-      suppliers,
-      purchaseInvoices,
-      supplierPayments,
-      employees,
-      attendance,
-      payroll,
+      settings, customers, doctors, medicines, prescriptions, sales, payments,
+      ledgerEntries, stockMovements, auditLogs, notifications, customerMedicalAlerts,
+      suppliers, purchaseInvoices, supplierPayments, employees, attendance, payroll,
       exportedAt: new Date().toISOString(),
     };
     return JSON.stringify(data, null, 2);
@@ -1151,65 +1463,19 @@ export const PharmacyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   return (
     <PharmacyContext.Provider
       value={{
-        currentUser,
-        setCurrentUser,
-        switchRole,
-        settings,
-        updateSettings,
-        customers,
-        doctors,
-        medicines,
-        prescriptions,
-        sales,
-        payments,
-        ledgerEntries,
-        stockMovements,
-        auditLogs,
-        notifications,
-        customerMedicalAlerts,
-        suppliers,
-        purchaseInvoices,
-        supplierPayments,
-        employees,
-        attendance,
-        payroll,
-        addCustomer,
-        updateCustomer,
-        addDoctor,
-        updateDoctor,
-        addMedicine,
-        updateMedicine,
-        adjustStock,
-        deleteMedicine,
-        addMedicalAlert,
-        deleteMedicalAlert,
-        getCustomerMedicalAlerts,
-        addSupplier,
-        updateSupplier,
-        deleteSupplier,
-        addPurchaseInvoice,
-        recordSupplierPayment,
-        getSupplierBalance,
-        addEmployee,
-        updateEmployee,
-        deleteEmployee,
-        markAttendance,
-        getAttendanceByDate,
-        getEmployeeAttendance,
-        calculatePayroll,
-        savePayroll,
-        getPayroll,
-        addPrescription,
-        updatePrescriptionStatus,
-        createSale,
-        recordPayment,
-        getCustomerBalance,
-        getCustomerMedicineHistory,
-        markNotificationRead,
-        markAllNotificationsRead,
-        resetAllData,
-        exportDatabaseJson,
-        importDatabaseJson,
+        currentUser, setCurrentUser, switchRole, settings, updateSettings,
+        customers, doctors, medicines, prescriptions, sales, payments,
+        ledgerEntries, stockMovements, auditLogs, notifications, customerMedicalAlerts,
+        suppliers, purchaseInvoices, supplierPayments, employees, attendance, payroll,
+        addCustomer, updateCustomer, addDoctor, updateDoctor, addMedicine, updateMedicine,
+        adjustStock, deleteMedicine, addMedicalAlert, deleteMedicalAlert, getCustomerMedicalAlerts,
+        addSupplier, updateSupplier, deleteSupplier, addPurchaseInvoice, recordSupplierPayment, getSupplierBalance,
+        addEmployee, updateEmployee, deleteEmployee, markAttendance, getAttendanceByDate,
+        getEmployeeAttendance, calculatePayroll, savePayroll, getPayroll,
+        addPrescription, updatePrescriptionStatus, createSale, recordPayment,
+        getCustomerBalance, getCustomerMedicineHistory,
+        markNotificationRead, markAllNotificationsRead, resetAllData,
+        exportDatabaseJson, importDatabaseJson,
       }}
     >
       {children}

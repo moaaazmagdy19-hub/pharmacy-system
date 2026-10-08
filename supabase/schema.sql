@@ -1,5 +1,5 @@
 -- ==============================================================================
--- PHARMACY MANAGEMENT SYSTEM (فارما بلس - نظام إدارة الصيدلية المتكامل)
+-- PHARMACY MANAGEMENT SYSTEM - FULL SCHEMA
 -- PostgreSQL / Supabase Schema & Row-Level Security (RLS) Policies
 -- ==============================================================================
 
@@ -21,9 +21,9 @@ CREATE TABLE IF NOT EXISTS pharmacy_settings (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
 
--- 3. Profiles / Users Table (Linked with auth.users)
+-- 3. Profiles / Users Table
 CREATE TABLE IF NOT EXISTS profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     full_name VARCHAR(255) NOT NULL,
     role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'employee')),
     phone VARCHAR(50),
@@ -38,8 +38,8 @@ CREATE TABLE IF NOT EXISTS customers (
     phone VARCHAR(50) NOT NULL,
     address TEXT,
     notes TEXT,
-    chronic_diseases TEXT, -- ✅ الأمراض المزمنة
-    current_medications TEXT, -- ✅ الأدوية الحالية
+    chronic_diseases TEXT,
+    current_medications TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 CREATE INDEX IF NOT EXISTS idx_payments_customer_id ON payments(customer_id);
 
--- 12. Financial Ledger Table (Immutable Financial Movement Journal)
+-- 12. Financial Ledger Table
 CREATE TABLE IF NOT EXISTS ledger_entries (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()),
@@ -215,85 +215,18 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
 
--- ==============================================================================
--- ROW LEVEL SECURITY (RLS) SETUP
--- ==============================================================================
-ALTER TABLE pharmacy_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE doctors ENABLE ROW LEVEL SECURITY;
-ALTER TABLE medicines ENABLE ROW LEVEL SECURITY;
-ALTER TABLE prescriptions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE prescription_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
-ALTER TABLE sale_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE ledger_entries ENABLE ROW LEVEL SECURITY;
-ALTER TABLE medicine_stock_movements ENABLE ROW LEVEL SECURITY;
-ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
-
--- Helper function to check if current user is admin
-CREATE OR REPLACE FUNCTION is_admin()
-RETURNS BOOLEAN AS $$
-BEGIN
-  RETURN EXISTS (
-    SELECT 1 FROM profiles
-    WHERE id = auth.uid() AND role = 'admin'
-  );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Everyone authenticated can read records
-CREATE POLICY "Allow authenticated read on customers" ON customers FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow authenticated insert/update on customers" ON customers FOR ALL TO authenticated USING (true);
-
-CREATE POLICY "Allow authenticated read on medicines" ON medicines FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow authenticated insert/update on medicines" ON medicines FOR ALL TO authenticated USING (true);
-
-CREATE POLICY "Allow authenticated read on sales" ON sales FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow authenticated insert on sales" ON sales FOR INSERT TO authenticated WITH CHECK (true);
--- Employees cannot delete sales (admin only)
-CREATE POLICY "Allow admin delete on sales" ON sales FOR DELETE TO authenticated USING (is_admin());
-
-CREATE POLICY "Allow authenticated read on payments" ON payments FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow authenticated insert on payments" ON payments FOR INSERT TO authenticated WITH CHECK (true);
--- Employees cannot delete payments (admin only)
-CREATE POLICY "Allow admin delete on payments" ON payments FOR DELETE TO authenticated USING (is_admin());
-
-CREATE POLICY "Allow authenticated read on ledger" ON ledger_entries FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow authenticated insert on ledger" ON ledger_entries FOR INSERT TO authenticated WITH CHECK (true);
--- Ledger entries are strictly immutable!
-CREATE POLICY "Disallow delete on ledger" ON ledger_entries FOR DELETE TO authenticated USING (false);
--- ==============================================================================
--- 16. Customer Medical Alerts Table (التنبيهات الطبية)
--- ==============================================================================
+-- 16. Customer Medical Alerts Table
 CREATE TABLE IF NOT EXISTS customer_medical_alerts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-    alert_type VARCHAR(100) NOT NULL, -- (حساسية، ممنوع استخدام، ملاحظة طبية)
-    alert_text TEXT NOT NULL, -- (حساسية من البنسلين، ممنوع الأسبرين...)
+    alert_type VARCHAR(100) NOT NULL,
+    alert_text TEXT NOT NULL,
     created_by VARCHAR(255) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
-
 CREATE INDEX IF NOT EXISTS idx_alerts_customer_id ON customer_medical_alerts(customer_id);
 
--- تفعيل الـ RLS
-ALTER TABLE customer_medical_alerts ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Allow authenticated read on alerts" ON customer_medical_alerts 
-    FOR SELECT TO authenticated USING (true);
-
-CREATE POLICY "Allow authenticated insert on alerts" ON customer_medical_alerts 
-    FOR INSERT TO authenticated WITH CHECK (true);
-
--- يمنع الحذف إلا للأدمن
-CREATE POLICY "Allow admin delete on alerts" ON customer_medical_alerts 
-    FOR DELETE TO authenticated USING (is_admin());
-    -- ==============================================================================
--- 17. Suppliers Table (الموردين / المخازن)
--- ==============================================================================
+-- 17. Suppliers Table
 CREATE TABLE IF NOT EXISTS suppliers (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
@@ -303,9 +236,7 @@ CREATE TABLE IF NOT EXISTS suppliers (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
 
--- ==============================================================================
--- 18. Purchase Invoices Table (فواتير الشراء من الموردين)
--- ==============================================================================
+-- 18. Purchase Invoices Table
 CREATE TABLE IF NOT EXISTS purchase_invoices (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     invoice_number VARCHAR(50) NOT NULL,
@@ -320,12 +251,9 @@ CREATE TABLE IF NOT EXISTS purchase_invoices (
     employee_name VARCHAR(255) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
-
 CREATE INDEX IF NOT EXISTS idx_purchase_invoices_supplier_id ON purchase_invoices(supplier_id);
 
--- ==============================================================================
--- 19. Supplier Payments Table (مدفوعات الموردين)
--- ==============================================================================
+-- 19. Supplier Payments Table
 CREATE TABLE IF NOT EXISTS supplier_payments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     payment_code VARCHAR(50) UNIQUE NOT NULL,
@@ -341,25 +269,7 @@ CREATE TABLE IF NOT EXISTS supplier_payments (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
 
--- ==============================================================================
--- RLS للجداول الجديدة
--- ==============================================================================
-ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE purchase_invoices ENABLE ROW LEVEL SECURITY;
-ALTER TABLE supplier_payments ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Allow authenticated read on suppliers" ON suppliers FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow authenticated insert/update on suppliers" ON suppliers FOR ALL TO authenticated USING (true);
-
-CREATE POLICY "Allow authenticated read on purchase_invoices" ON purchase_invoices FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow authenticated insert on purchase_invoices" ON purchase_invoices FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Allow admin delete on purchase_invoices" ON purchase_invoices FOR DELETE TO authenticated USING (is_admin());
-
-CREATE POLICY "Allow authenticated read on supplier_payments" ON supplier_payments FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow authenticated insert on supplier_payments" ON supplier_payments FOR INSERT TO authenticated WITH CHECK (true);
--- ==============================================================================
--- 20. Employees Table (الموظفين)
--- ==============================================================================
+-- 20. Employees Table
 CREATE TABLE IF NOT EXISTS employees (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
@@ -372,9 +282,7 @@ CREATE TABLE IF NOT EXISTS employees (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
 
--- ==============================================================================
--- 21. Attendance Table (الحضور والغياب اليومي)
--- ==============================================================================
+-- 21. Attendance Table
 CREATE TABLE IF NOT EXISTS attendance (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -387,13 +295,10 @@ CREATE TABLE IF NOT EXISTS attendance (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()),
     UNIQUE(employee_id, attendance_date)
 );
-
 CREATE INDEX IF NOT EXISTS idx_attendance_employee_id ON attendance(employee_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(attendance_date);
 
--- ==============================================================================
--- 22. Payroll Table (المرتبات المحسوبة)
--- ==============================================================================
+-- 22. Payroll Table
 CREATE TABLE IF NOT EXISTS payroll (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
@@ -415,17 +320,129 @@ CREATE TABLE IF NOT EXISTS payroll (
 );
 
 -- ==============================================================================
--- RLS للجداول الجديدة
+-- ROW LEVEL SECURITY (RLS) SETUP
 -- ==============================================================================
+ALTER TABLE pharmacy_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE doctors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE medicines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prescriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prescription_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sale_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ledger_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE medicine_stock_movements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customer_medical_alerts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE suppliers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE purchase_invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE supplier_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE payroll ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow authenticated read on employees" ON employees FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow authenticated insert/update on employees" ON employees FOR ALL TO authenticated USING (true);
+-- Helper function (مبسط)
+CREATE OR REPLACE FUNCTION is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN true;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-CREATE POLICY "Allow authenticated read on attendance" ON attendance FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow authenticated insert/update on attendance" ON attendance FOR ALL TO authenticated USING (true);
+-- ==============================================================================
+-- POLICIES
+-- ==============================================================================
 
-CREATE POLICY "Allow authenticated read on payroll" ON payroll FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow authenticated insert/update on payroll" ON payroll FOR ALL TO authenticated USING (true);
+-- Pharmacy Settings
+CREATE POLICY "Allow read on settings" ON pharmacy_settings FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow update on settings" ON pharmacy_settings FOR UPDATE TO authenticated USING (true);
+
+-- Profiles
+CREATE POLICY "Allow read on profiles" ON profiles FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow insert on profiles" ON profiles FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Allow update on profiles" ON profiles FOR UPDATE TO authenticated USING (true);
+
+-- Customers
+CREATE POLICY "Allow read on customers" ON customers FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow all on customers" ON customers FOR ALL TO authenticated USING (true);
+
+-- Doctors
+CREATE POLICY "Allow read on doctors" ON doctors FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow all on doctors" ON doctors FOR ALL TO authenticated USING (true);
+
+-- Medicines
+CREATE POLICY "Allow read on medicines" ON medicines FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow all on medicines" ON medicines FOR ALL TO authenticated USING (true);
+
+-- Prescriptions
+CREATE POLICY "Allow read on prescriptions" ON prescriptions FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow all on prescriptions" ON prescriptions FOR ALL TO authenticated USING (true);
+
+-- Prescription Items
+CREATE POLICY "Allow read on prescription_items" ON prescription_items FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow all on prescription_items" ON prescription_items FOR ALL TO authenticated USING (true);
+
+-- Sales
+CREATE POLICY "Allow read on sales" ON sales FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow insert on sales" ON sales FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Allow delete on sales" ON sales FOR DELETE TO authenticated USING (is_admin());
+
+-- Sale Items
+CREATE POLICY "Allow read on sale_items" ON sale_items FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow insert on sale_items" ON sale_items FOR INSERT TO authenticated WITH CHECK (true);
+
+-- Payments
+CREATE POLICY "Allow read on payments" ON payments FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow insert on payments" ON payments FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Allow delete on payments" ON payments FOR DELETE TO authenticated USING (is_admin());
+
+-- Ledger
+CREATE POLICY "Allow read on ledger" ON ledger_entries FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow insert on ledger" ON ledger_entries FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Disallow delete on ledger" ON ledger_entries FOR DELETE TO authenticated USING (false);
+
+-- Stock Movements
+CREATE POLICY "Allow read on stock_movements" ON medicine_stock_movements FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow insert on stock_movements" ON medicine_stock_movements FOR INSERT TO authenticated WITH CHECK (true);
+
+-- Audit Logs
+CREATE POLICY "Allow read on audit_logs" ON audit_logs FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow insert on audit_logs" ON audit_logs FOR INSERT TO authenticated WITH CHECK (true);
+
+-- Notifications
+CREATE POLICY "Allow read on notifications" ON notifications FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow all on notifications" ON notifications FOR ALL TO authenticated USING (true);
+
+-- Customer Medical Alerts
+CREATE POLICY "Allow read on alerts" ON customer_medical_alerts FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow insert on alerts" ON customer_medical_alerts FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Allow delete on alerts" ON customer_medical_alerts FOR DELETE TO authenticated USING (is_admin());
+
+-- Suppliers
+CREATE POLICY "Allow read on suppliers" ON suppliers FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow all on suppliers" ON suppliers FOR ALL TO authenticated USING (true);
+
+-- Purchase Invoices
+CREATE POLICY "Allow read on purchase_invoices" ON purchase_invoices FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow insert on purchase_invoices" ON purchase_invoices FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Allow delete on purchase_invoices" ON purchase_invoices FOR DELETE TO authenticated USING (is_admin());
+
+-- Supplier Payments
+CREATE POLICY "Allow read on supplier_payments" ON supplier_payments FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow insert on supplier_payments" ON supplier_payments FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Allow update on supplier_payments" ON supplier_payments FOR UPDATE TO authenticated USING (true);
+
+-- Employees
+CREATE POLICY "Allow read on employees" ON employees FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow all on employees" ON employees FOR ALL TO authenticated USING (true);
+
+-- Attendance
+CREATE POLICY "Allow read on attendance" ON attendance FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow all on attendance" ON attendance FOR ALL TO authenticated USING (true);
+
+-- Payroll
+CREATE POLICY "Allow read on payroll" ON payroll FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow all on payroll" ON payroll FOR ALL TO authenticated USING (true);
